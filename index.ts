@@ -8,19 +8,37 @@ import jwt from "jsonwebtoken";
 
 dotenv.config();
 
+const context = ({ req }: ExpressContext) => {
+  const authorizationHeader = req.headers.authorization || "";
+  const [bearer, token] = authorizationHeader.split(" ");
+
+  if (bearer && bearer.toLowerCase() === "bearer" && token) {
+    const user = extractUserFromToken(token);
+    console.log("Gateway context:", { user });
+    return { user };
+  } else {
+    console.error("Invalid authorization header format");
+    return { user: null };
+  }
+};
+
 const extractUserFromToken = (token: string) => {
   try {
-    console.log("tooooken", token);
-    console.log("decodedToken", jwt.decode(token)); // Add this line
+    console.log("Token value:", token); // Log the token
     const decodedToken: any = jwt.verify(
       token,
-      process.env.SECRET_KEY || "8000"
+      process.env.SECRET_KEY || "8000",
+      { ignoreExpiration: false } // Ensure token is not expired
     );
+    console.log("Decoded token:", decodedToken);
     return {
       userId: decodedToken.userId,
     };
-  } catch (error: any) {
-    console.error("Error verifying token:", error.message);
+  } catch (error) {
+    console.error(
+      "Error verifying token:",
+      (error as { message: string }).message
+    );
     return null;
   }
 };
@@ -37,20 +55,36 @@ const gateway = new ApolloGateway({
         url: "http://localhost:7006/graphql",
       },
     ],
+
+    introspectionHeaders: {
+      originalAuthorization: "Bearer abc123",
+    },
   }),
 });
 
 const server = new ApolloServer({
   gateway,
   context: ({ req }: ExpressContext) => {
-    const token = req.headers.authorization || "";
-    const user = extractUserFromToken(token);
+    console.log("Headers in posts service:", req.headers);
 
-    console.log("Gateway context:", { user });
+    const authorizationHeader = req.headers.authorization || "";
+    console.log("Gateway context:", { authorizationHeader });
 
-    return {
-      user,
-    };
+    const [bearer, token] = authorizationHeader.split(" ");
+
+    if (bearer && bearer.toLowerCase() === "bearer" && token) {
+      const user = extractUserFromToken(token);
+      console.log("Gateway context:", { user });
+      return {
+        user,
+        headers: {
+          authorization: token,
+        },
+      };
+    } else {
+      console.error("Invalid authorization header format");
+      return { user: null };
+    }
   },
 });
 
